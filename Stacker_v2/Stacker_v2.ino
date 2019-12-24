@@ -1,5 +1,5 @@
 #include <Adafruit_NeoPixel.h>
-//#include <TimerOne.h>
+#include <TimerOne.h>
 
 
 #define LED_PIN     6   //Pin de los datos
@@ -7,6 +7,8 @@
 #define BRIGHTNESS  20  //luminosidad
 #define COLOR_ORDER GRB
 #define LED_TYPE    WS2812B
+#define DUTY        512
+#define PIN_PWM    11
 
 
 //MÁQUINA DE ESTADOS
@@ -85,10 +87,18 @@ void setup() {
   pinMode(intPin1, INPUT_PULLUP);
   pinMode(intPin2, INPUT_PULLUP);
   pinMode(pinOut, OUTPUT);
+
+  Timer1.initialize(2000);
+  Timer1.start();
+  Timer1.pwm(PIN_PWM, DUTY);
+  delay(500);
+  Timer1.stop();
+  //tone(pinOut, 600, 500);
 }
 
 void loop()
 {
+
   Stacker();
   //matriz.setPixelColor(matrizLeds[5][5], 0, 0, 255);
   //matriz.show();
@@ -102,10 +112,9 @@ void pararFila() //para la fila en el lugar y aumenta la fila
     detachInterrupt(digitalPinToInterrupt(intPin1));
     comprobarStack();//comprueba si se apila y si no elimina leds
     direccion = 0;
-    i = luces-1;
+    i = luces - 1;
     antiRebotes = millis();
     attachInterrupt(digitalPinToInterrupt(intPin1), pararFila, FALLING);
-
   }
   interrupts();
 }
@@ -138,7 +147,7 @@ void comprobarStack()
     estado = 4;
     //break;
   }
-  else if (fila >= 15)
+  else if (fila >= 32)
   {
     estado = 3;
   }
@@ -154,18 +163,26 @@ void Fallo_Al_Pulsar() //animacion al fallar
   alternar = 0;
   int tono = 1;
   long tiempo1 = millis();
-  tone(pinOut, 600, 500);
+  //tone(pinOut, 600, 500);
+  Timer1.setPeriod(2000);
+  Timer1.start();
   int r = 0;
   while (r < 6)
   {
     if (millis() - tiempo1 > 500 && tono == 1) //pongo los valores en la matriz
     {
-      tone(pinOut, 500, 500);
+      //tone(pinOut, 500, 500);
+      Timer1.setPeriod(2500);
       tono = 2;
     }
     if (millis() - tiempo1 > 1000 && tono == 2) //pongo los valores en la matriz1
     {
-      tone(pinOut, 400, 500);
+      Timer1.setPeriod(3000);
+      tono = 3;
+    }
+    if (millis() - tiempo1 > 1500 && tono == 3) //pongo los valores en la matriz1
+    {
+      Timer1.stop();
       tono = 0;
     }
     if (millis() - antiRebotes > timeThreshold) //pongo los valores en la matriz
@@ -196,16 +213,35 @@ void Fallo_Al_Pulsar() //animacion al fallar
   tono = 1;
 }
 
-void actualizar_Nivel()
+void actualizar_Nivel() //Dependiendo del nivel aumenta la velocidad a la que se mueven los leds
 {
-  VelocidadStack = 150 - 2 * fila;
-  if (fila == 5 && luces == 3) // 17
+  if (lvl == 1)
   {
-    luces--;
+    VelocidadStack = velocidadStack - 2 * fila;
   }
-  else if (fila == 10 && luces == 2) //25
+  else if (lvl == 2)
   {
-    luces--;
+    VelocidadStack = velocidadStack - 3 * fila;
+    if (fila == 17 && luces == 3) // 17
+    {
+      luces--;
+    }
+    else if (fila == 25 && luces == 2) //25
+    {
+      luces--;
+    }
+  }
+  else if (lvl == 3)
+  {
+    VelocidadStack = velocidadStack - 4 * fila;
+    if (fila == 12 && luces == 3)
+    {
+      luces--;
+    }
+    else if (fila == 20 && luces == 2)
+    {
+      luces--;
+    }
   }
 }
 
@@ -402,6 +438,14 @@ void InterruptEmpezar()
     matriz.show();
     detachInterrupt(digitalPinToInterrupt(intPin1));
     attachInterrupt(digitalPinToInterrupt(intPin1), pararFila, FALLING); //FALLING
+    if (lvl == 1 || lvl == 2)
+    {
+      VelocidadStack = 200;
+    }
+    else
+    {
+      VelocidadStack = 180;
+    }
     estado = 2;
     antiRebotes = millis();
   }
@@ -472,6 +516,7 @@ void Stacker()
       detachInterrupt(digitalPinToInterrupt(intPin1));
       attachInterrupt(digitalPinToInterrupt(intPin1), InterruptEmpezar, FALLING);
       attachInterrupt(digitalPinToInterrupt(intPin2), cambiarDificultad, FALLING);
+      velocidadStack = 200;
       estado = ESTADO_INICIAL;
       break;
 
