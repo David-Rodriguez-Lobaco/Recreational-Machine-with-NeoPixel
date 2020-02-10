@@ -1,14 +1,26 @@
 #include <Adafruit_NeoPixel.h>
 #include <TimerOne.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 #define LED_PIN     6   //Pin de los datos
 #define NUM_LEDS    256   //numero de leds
-#define BRIGHTNESS  20  //luminosidad
+int     BRIGHTNESS = 20;  //luminosidad
 #define COLOR_ORDER GRB
 #define LED_TYPE    WS2812B
 #define DUTY        512
-#define PIN_PWM    11
+#define PIN_PWM    11 //sonido
+
+//NOTAS MUSICALES
+#define A_BEMOL_PERIODO    2408
+#define B_BEMOL_PERIODO    2145
+#define C_PERIODO          1911
+
+#define NEGRA         550
+#define SILENCIO      50
+#define SEMICORCHEA   150
 
 
 //MÁQUINA DE ESTADOS
@@ -18,8 +30,9 @@
 #define STACKER          2
 #define WIN              3
 #define GAME_OVER        4
+#define LOADING          9
 
-int estado = 0;
+int estado = 9;
 
 //CRGB leds[NUM_LEDS];
 Adafruit_NeoPixel matriz = Adafruit_NeoPixel(256, LED_PIN, NEO_GRB + NEO_KHZ800);
@@ -28,6 +41,8 @@ int fila = 0;
 const int timeThreshold = 300;
 const int intPin1 = 2; //boton para parar stacker
 const int intPin2 = 3; //boton del nivelint
+const int intPin3 = 18; //Boton del color
+const int intPin4 = 19; //Boton del brillo
 long antiRebotes = 0;
 long startTime = 0;
 int luces = 3;
@@ -36,8 +51,17 @@ int direccion = 0; // '0' es que va para la derecha y '1' hacia la izquierda
 int i = 2; //La posicion por la que empieza en la matriz
 int matrizPos[32][8]; //posicion de los leds para comparar
 int VelocidadStack = 200;
-int lvl = 2;
-int pinOut = 8;
+int lvl = 1;  //Nivel de dificultad
+int color = 0;
+uint32_t c = matriz.Color(0, 0, 255);
+
+long tiempo = 0;
+int tempo = 0;
+int puntuacionStackerMaxima = 0;
+int puntuacionStacker = 0;
+int tiempoCarga = 0;
+
+
 
 int matrizLeds[32][8] = {
   {0, 1, 2, 3, 4, 5, 6, 7},
@@ -86,22 +110,40 @@ void setup() {
   //attachInterrupt(digitalPinToInterrupt(intPin), InterruptEmpezar, FALLING);
   pinMode(intPin1, INPUT_PULLUP);
   pinMode(intPin2, INPUT_PULLUP);
-  pinMode(pinOut, OUTPUT);
+  pinMode(intPin3, INPUT_PULLUP);
+  pinMode(intPin4, INPUT_PULLUP);
+  //  pinMode(pinOut, OUTPUT);
 
   Timer1.initialize(2000);
-  Timer1.start();
   Timer1.pwm(PIN_PWM, DUTY);
-  delay(500);
   Timer1.stop();
   //tone(pinOut, 600, 500);
+
+  // Inicializar el LCD
+  lcd.init();
+
+  //Encender la luz de fondo.
+  lcd.backlight();
+  tiempoCarga = millis();
+
 }
 
 void loop()
 {
-
+  // Escribimos el Mensaje en el LCD.
   Stacker();
-  //matriz.setPixelColor(matrizLeds[5][5], 0, 0, 255);
-  //matriz.show();
+  lcd.setCursor(0, 0);
+  lcd.print("record: ");
+  lcd.print(puntuacionStackerMaxima);
+  lcd.setCursor(0, 1);
+  lcd.print("puntuacion: ");
+  lcd.setCursor(12, 1);
+  lcd.print(puntuacionStacker);
+  lcd.setCursor(0, 2);
+  lcd.print("Nivel: ");
+  lcd.setCursor(7, 2);
+  lcd.print(lvl);
+
 }
 
 void pararFila() //para la fila en el lugar y aumenta la fila
@@ -115,6 +157,7 @@ void pararFila() //para la fila en el lugar y aumenta la fila
     i = luces - 1;
     antiRebotes = millis();
     attachInterrupt(digitalPinToInterrupt(intPin1), pararFila, FALLING);
+
   }
   interrupts();
 }
@@ -130,7 +173,7 @@ void comprobarStack()
       if (matrizPos[fila][j] == 1 && matrizPos[fila - 1][j] != 1)
       {
         matrizPos[fila][j] = 2; //pongo a 2 el que falla
-        matriz.setPixelColor(matrizLeds[fila][j], 0, 0, 255);
+        matriz.setPixelColor(matrizLeds[fila][j], c);
         luces--;
       }
     }
@@ -191,7 +234,7 @@ void Fallo_Al_Pulsar() //animacion al fallar
       {
         if (matrizPos[fila][k] == 2 && alternar == 0)
         {
-          matriz.setPixelColor(matrizLeds[fila][k], 0, 0, 255);
+          matriz.setPixelColor(matrizLeds[fila][k], c);
         }
         else if (matrizPos[fila][k] == 2 && alternar == 1)
         {
@@ -213,15 +256,25 @@ void Fallo_Al_Pulsar() //animacion al fallar
   tono = 1;
 }
 
-void actualizar_Nivel() //Dependiendo del nivel aumenta la velocidad a la que se mueven los leds
+void actualizar_Nivel() //Dependiendo del nivel aumenta la velocidad a la que se mueven los leds y añade puntuacion
 {
   if (lvl == 1)
   {
-    VelocidadStack = velocidadStack - 2 * fila;
+    VelocidadStack = VelocidadStack - 2;
+    puntuacionStacker = puntuacionStacker + 100 * luces;
+    if (puntuacionStacker > puntuacionStackerMaxima)
+    {
+      puntuacionStackerMaxima = puntuacionStacker;
+    }
   }
   else if (lvl == 2)
   {
-    VelocidadStack = velocidadStack - 3 * fila;
+    VelocidadStack = VelocidadStack - 3;
+    puntuacionStacker = puntuacionStacker + 225 * luces;
+    if (puntuacionStacker > puntuacionStackerMaxima)
+    {
+      puntuacionStackerMaxima = puntuacionStacker;
+    }
     if (fila == 17 && luces == 3) // 17
     {
       luces--;
@@ -233,7 +286,12 @@ void actualizar_Nivel() //Dependiendo del nivel aumenta la velocidad a la que se
   }
   else if (lvl == 3)
   {
-    VelocidadStack = velocidadStack - 4 * fila;
+    VelocidadStack = VelocidadStack - 4;
+    puntuacionStacker = puntuacionStacker + 475 * luces;
+    if (puntuacionStacker > puntuacionStackerMaxima)
+    {
+      puntuacionStackerMaxima = puntuacionStacker;
+    }
     if (fila == 12 && luces == 3)
     {
       luces--;
@@ -253,32 +311,33 @@ void ISR_Mover()
     if (i > luces - 1)
     {
       matriz.setPixelColor(matrizLeds[fila][i - luces], 0, 0, 0);
+      matrizPos[fila][i - luces] = 0;
     }
     if (luces == 3)
     {
-      matriz.setPixelColor(matrizLeds[fila][i - 2], 0, 0, 255);
-      matriz.setPixelColor(matrizLeds[fila][i - 1], 0, 0, 255);
-      matriz.setPixelColor(matrizLeds[fila][i], 0, 0, 255);
+      matriz.setPixelColor(matrizLeds[fila][i - 2], c);
+      matriz.setPixelColor(matrizLeds[fila][i - 1], c);
+      matriz.setPixelColor(matrizLeds[fila][i], c);
 
-      matrizPos[fila][i - 3] = 0;
+      
       matrizPos[fila][i - 2] = 1;
       matrizPos[fila][i - 1] = 1;
       matrizPos[fila][i] = 1;
     }
     else if (luces == 2)
     {
-      matriz.setPixelColor(matrizLeds[fila][i - 1], 0, 0, 255);
-      matriz.setPixelColor(matrizLeds[fila][i], 0, 0, 255);
+      matriz.setPixelColor(matrizLeds[fila][i - 1], c);
+      matriz.setPixelColor(matrizLeds[fila][i], c);
 
-      matrizPos[fila][i - 2] = 0;
+      //matrizPos[fila][i - 2] = 0;
       matrizPos[fila][i - 1] = 1;
       matrizPos[fila][i] = 1;
     }
     else if (luces == 1)
     {
-      matriz.setPixelColor(matrizLeds[fila][i], 0, 0, 255);
+      matriz.setPixelColor(matrizLeds[fila][i], c);
 
-      matrizPos[fila][i - 1] = 0;
+      //matrizPos[fila][i - 1] = 0;
       matrizPos[fila][i] = 1;
     }
   }
@@ -287,9 +346,9 @@ void ISR_Mover()
     if (luces == 3)
     {
       matriz.setPixelColor(matrizLeds[fila][i + 3], 0, 0, 0);
-      matriz.setPixelColor(matrizLeds[fila][i + 2], 0, 0, 255);
-      matriz.setPixelColor(matrizLeds[fila][i + 1], 0, 0, 255);
-      matriz.setPixelColor(matrizLeds[fila][i], 0, 0, 255);
+      matriz.setPixelColor(matrizLeds[fila][i + 2], c);
+      matriz.setPixelColor(matrizLeds[fila][i + 1], c);
+      matriz.setPixelColor(matrizLeds[fila][i], c);
 
       matrizPos[fila][i + 3] = 0;
       matrizPos[fila][i + 2] = 1;
@@ -299,8 +358,8 @@ void ISR_Mover()
     else if (luces == 2)
     {
       matriz.setPixelColor(matrizLeds[fila][i + 2], 0, 0, 0);
-      matriz.setPixelColor(matrizLeds[fila][i + 1], 0, 0, 255);
-      matriz.setPixelColor(matrizLeds[fila][i], 0, 0, 255);
+      matriz.setPixelColor(matrizLeds[fila][i + 1], c);
+      matriz.setPixelColor(matrizLeds[fila][i], c);
 
       matrizPos[fila][i + 2] = 0;
       matrizPos[fila][i + 1] = 1;
@@ -309,7 +368,7 @@ void ISR_Mover()
     else if (luces == 1)
     {
       matriz.setPixelColor(matrizLeds[fila][i + 1], 0, 0, 0);
-      matriz.setPixelColor(matrizLeds[fila][i], 0, 0, 255);
+      matriz.setPixelColor(matrizLeds[fila][i], c);
 
       matrizPos[fila][i + 1] = 0;
       matrizPos[fila][i] = 1;
@@ -317,7 +376,6 @@ void ISR_Mover()
   }
   matriz.show();
   interrupts();
-
   if (direccion == 0)
   {
     i++;
@@ -354,6 +412,12 @@ void reiniciarStacker()
   }
   VelocidadStack = 200;
   estado = CONFIGURACION;
+  /**********************************************************************/
+  if (puntuacionStacker > puntuacionStackerMaxima) {
+    puntuacionStackerMaxima = puntuacionStacker;
+  }
+  lcd.clear();
+  puntuacionStacker = 0;
 }
 
 void ISR_Animacion()
@@ -363,11 +427,11 @@ void ISR_Animacion()
     matriz.clear();
     for (int f = 0; f < 87; f = f + 2)
     {
-      matriz.setPixelColor(f, 0, 0, 255);
+      matriz.setPixelColor(f, c);
     }
     for (int f = 254; f > 167; f = f - 2)
     {
-      matriz.setPixelColor(f, 0, 0, 255);
+      matriz.setPixelColor(f, c);
     }
     alternar = 1;
   }
@@ -376,11 +440,11 @@ void ISR_Animacion()
     matriz.clear();
     for (int f = 1; f < 88; f = f + 2)
     {
-      matriz.setPixelColor(f, 0, 0, 255);
+      matriz.setPixelColor(f, c);
     }
     for (int f = 255; f > 168; f = f - 2)
     {
-      matriz.setPixelColor(f, 0, 0, 255);
+      matriz.setPixelColor(f, c);
     }
     alternar = 0;
   }
@@ -437,49 +501,173 @@ void InterruptEmpezar()
     matriz.clear();
     matriz.show();
     detachInterrupt(digitalPinToInterrupt(intPin1));
+    detachInterrupt(digitalPinToInterrupt(intPin2));
+    detachInterrupt(digitalPinToInterrupt(intPin3));
+    detachInterrupt(digitalPinToInterrupt(intPin4));
     attachInterrupt(digitalPinToInterrupt(intPin1), pararFila, FALLING); //FALLING
-    if (lvl == 1 || lvl == 2)
-    {
-      VelocidadStack = 200;
-    }
-    else
-    {
-      VelocidadStack = 180;
-    }
+
     estado = 2;
     antiRebotes = millis();
+    Timer1.stop();
+    tempo = 0;
   }
   interrupts();
 }
 
 void animacionGanadoraStacker()
 {
+  int d = 0;
+  long periodo;
+  int tono = 1;
+  long tiempo1;
   noInterrupts();
+
+  Timer1.setPeriod(C_PERIODO);
+  Timer1.start();
+
+  delay(150);
+  Timer1.stop();
+  delay(50);
+
+
   alternar = 0;
-  for (int d = 0; d < 8; d++)
+  periodo = millis() - 251;
+  tiempo1 = millis();
+  while (d < 18)
   {
-    for (int a = 0; a < 32; a++)
+    if (millis() - tiempo1 > SEMICORCHEA && tono == 1) //1
     {
-      for (int b = 0; b < 8; b++)
+      Timer1.stop();
+      tono = 2;
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > SILENCIO && tono == 2)
+    {
+      //Timer1.setPeriod(C_PERIODO);
+      tono = 3;
+      Timer1.start();
+      tiempo1 = millis();
+    } if (millis() - tiempo1 > SEMICORCHEA && tono == 3) //1
+    {
+      Timer1.stop();
+      tono = 4;
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > SILENCIO && tono == 4)
+    {
+      //Timer1.setPeriod(C_PERIODO);
+      tono = 5;
+      Timer1.start();
+      tiempo1 = millis();
+    }
+    else if (millis() - tiempo1 > SEMICORCHEA && tono == 5) //2
+    {
+      tono = 6;
+      Timer1.stop();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > SILENCIO && tono == 6)
+    {
+      // Timer1.setPeriod(C_PERIODO);
+      tono = 7;
+      Timer1.start();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > SEMICORCHEA && tono == 7) //3
+    {
+      tono = 8;
+      Timer1.stop();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > SILENCIO && tono == 8)
+    {
+      tono = 9;
+      Timer1.setPeriod(C_PERIODO);
+      Timer1.start();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > NEGRA && tono == 9) //4
+    {
+      tono = 10;
+      Timer1.stop();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > SILENCIO && tono == 10)
+    {
+      tono = 11;
+      Timer1.setPeriod(A_BEMOL_PERIODO);
+      Timer1.start();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > NEGRA && tono == 11) //5
+    {
+      tono = 12;
+      Timer1.stop();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > SILENCIO && tono == 12)
+    {
+      tono = 13;
+      Timer1.setPeriod(B_BEMOL_PERIODO);
+      Timer1.start();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > NEGRA && tono == 13) //6
+    {
+      tono = 14;
+      Timer1.stop();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > SILENCIO && tono == 14)
+    {
+      tono = 15;
+      Timer1.setPeriod(C_PERIODO);
+      Timer1.start();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > SEMICORCHEA + 200 && tono == 15)
+    {
+      tono = 16;
+      Timer1.stop();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > SILENCIO && tono == 16)
+    {
+      tono = 17;
+      Timer1.setPeriod(B_BEMOL_PERIODO);
+      Timer1.start();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > SEMICORCHEA && tono == 17)
+    {
+      tono = 18;
+      Timer1.stop();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > SILENCIO && tono == 18)
+    {
+      tono = 19;
+      Timer1.setPeriod(C_PERIODO);
+      Timer1.start();
+      tiempo1 = millis();
+    } else if (millis() - tiempo1 > NEGRA && tono == 19)
+    {
+      tono = 0;
+      Timer1.stop();
+      tiempo1 = millis();
+    }
+
+    if (millis() - periodo > 250) //pongo los valores en la matriz
+    {
+      for (int a = 0; a < 32; a++)
       {
-        if (alternar == 0 && matrizPos[a][b] == 1)
+        for (int b = 0; b < 8; b++)
         {
-          matriz.setPixelColor(matrizLeds[a][b], 0, 0, 0);
-        }
-        else if (alternar == 1 && matrizPos[a][b] == 1)
-        {
-          matriz.setPixelColor(matrizLeds[a][b], 0, 0, 255);
+          if (alternar == 0 && matrizPos[a][b] == 1)
+          {
+            matriz.setPixelColor(matrizLeds[a][b], 0, 0, 0);
+          }
+          else if (alternar == 1 && matrizPos[a][b] == 1)
+          {
+            matriz.setPixelColor(matrizLeds[a][b], c);
+          }
         }
       }
-    }
-    matriz.show();
-    delay(250);
-    if (alternar == 0)
-    {
-      alternar = 1;
-    }
-    else {
-      alternar = 0;
+      matriz.show();
+      if (alternar == 0)
+      {
+        alternar = 1;
+      }
+      else {
+        alternar = 0;
+      }
+      d++;
+      periodo = millis();
     }
   }
   interrupts();
@@ -494,33 +682,272 @@ void cambiarDificultad()
     if (lvl == 1)
     {
       lvl = 2;
+      //****************************************************************************************************
+      //lcd.setCursor(7,2);
+      // lcd.print("1");
     }
     else if (lvl == 2)
     {
       lvl = 3;
+      //lcd.clear();
+      // lcd.setCursor(7,2);
+      //lcd.print("2");
     }
     else if (lvl == 3)
     {
       lvl = 1;
+      //lcd.setCursor(7,2);
+      //lcd.print("3");
     }
     antiRebotes = millis();
   }
   interrupts();
 }
 
+void sonido_inicio()
+{
+  if (millis() - tiempo > 200 && tempo == 0)
+  {
+
+    Timer1.setPeriod(3000);
+    Timer1.start();
+    tempo = 1;
+    //tiempo = millis();
+  } else if (millis() - tiempo > 400 && tempo == 1)
+  {
+
+    Timer1.setPeriod(2500);
+    tempo = 2;
+    //tiempo = millis();
+  } else if (millis() - tiempo > 600 && tempo == 2)
+  {
+    Timer1.setPeriod(2000);
+    tempo = 3;
+    //tiempo = millis();
+  } else if (millis() - tiempo > 800 && tempo == 3)
+  {
+    Timer1.setPeriod(1500);
+    tempo = 0;
+    tiempo = millis();
+  }/*else if(millis() - tiempo > 2500 && tempo == 4)
+    {
+      Timer1.setPeriod(4500);
+      tempo = 5;
+       tiempo = millis();
+    }else if(millis() - tiempo > 3000 && tempo == 5)
+    {
+      Timer1.setPeriod(4500);
+      tempo = 0;
+      tiempo = millis();
+    }*/
+}
+
+void sonido_victoria()
+{
+  if (millis() - tiempo > 200 && tempo == 0)
+  {
+
+    Timer1.setPeriod(3000);
+    Timer1.start();
+    tempo = 1;
+    //tiempo = millis();
+  } else if (millis() - tiempo > 400 && tempo == 1)
+  {
+
+    Timer1.setPeriod(2500);
+    tempo = 2;
+    //tiempo = millis();
+  } else if (millis() - tiempo > 600 && tempo == 2)
+  {
+    Timer1.setPeriod(2000);
+    tempo = 3;
+    //tiempo = millis();
+  } else if (millis() - tiempo > 800 && tempo == 3)
+  {
+    Timer1.setPeriod(1500);
+    tempo = 0;
+    tiempo = millis();
+  }/*else if(millis() - tiempo > 2500 && tempo == 4)
+    {
+      Timer1.setPeriod(4500);
+      tempo = 5;
+       tiempo = millis();
+    }else if(millis() - tiempo > 3000 && tempo == 5)
+    {
+      Timer1.setPeriod(4500);
+      tempo = 0;
+      tiempo = millis();
+    }*/
+}
+
+void CambiarColor()
+{
+  noInterrupts();
+  if (millis() - antiRebotes > timeThreshold) //pongo los valores en la matriz
+  {
+    if (color == 0)
+    {
+      c = matriz.Color(0, 0, 255); //azul
+      color = 1;
+    }
+    else if (color == 1)
+    {
+      c = matriz.Color(0, 255, 0); //Verde
+      color = 2;
+    }
+    else if (color == 2)
+    {
+      c = matriz.Color(255, 0, 0); //Rojo
+      color = 3;
+    }
+    else if (color == 3)
+    {
+      c = matriz.Color(0, 255, 255); //Cian
+      color = 4;
+    }
+    else if (color == 4)
+    {
+      c = matriz.Color(255, 0, 255); //Morado
+      color = 5;
+    }
+    else if (color == 5)
+    {
+      c = matriz.Color(255, 255, 0); //Naranja
+      color = 0;
+    }
+    antiRebotes = millis();
+  }
+  interrupts();
+}
+
+void CambiarBrillo()
+{
+  noInterrupts();
+  if (millis() - antiRebotes > timeThreshold) //pongo los valores en la matriz
+  {
+    BRIGHTNESS += 10;
+    if (BRIGHTNESS >= 120)
+    {
+      BRIGHTNESS = 10;
+    }
+    matriz.setBrightness(BRIGHTNESS);
+    antiRebotes = millis();
+  }
+  interrupts();
+}
+
+void pantallaCarga()
+{
+
+  matriz.clear();
+  //Fondo
+  /*for (int f = 0; f < 255; f++)
+  {
+    matriz.setPixelColor(f, 0, 30, 0);
+  }*/
+
+  //L
+  matriz.setPixelColor(matrizLeds[31][2], 255, 255, 0);
+  matriz.setPixelColor(matrizLeds[30][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[29][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[28][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[28][3],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[28][4],  255, 255, 0);
+
+  //O
+  matriz.setPixelColor(matrizLeds[26][3],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[26][4],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[25][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[25][5],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[24][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[24][5],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[23][3],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[23][4],  255, 255, 0);
+
+  //A
+  matriz.setPixelColor(matrizLeds[21][4],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[20][3],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[20][4],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[19][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[19][3],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[19][4],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[19][5],  255, 255, 0);
+
+
+  //D
+  matriz.setPixelColor(matrizLeds[17][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[17][3],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[17][4],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[16][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[16][5],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[15][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[15][5],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[14][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[14][3],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[14][4],  255, 255, 0);
+
+  //I
+  matriz.setPixelColor(matrizLeds[12][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[12][3],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[12][4],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[12][5],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[11][3],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[11][4],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[10][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[10][3],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[10][4],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[10][5],  255, 255, 0);
+
+  //N
+  matriz.setPixelColor(matrizLeds[8][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[8][5],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[7][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[7][3],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[7][5],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[6][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[6][4],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[6][5],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[5][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[5][5],  255, 255, 0);
+
+  //G
+  matriz.setPixelColor(matrizLeds[3][3],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[3][4],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[2][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[1][2],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[1][4],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[1][5],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[0][3],  255, 255, 0);
+  matriz.setPixelColor(matrizLeds[0][4],  255, 255, 0);
+
+
+  matriz.show();
+  if (millis() >= tiempoCarga + 3000)
+  {
+    estado = 0;
+  }
+}
+
 void Stacker()
 {
   switch (estado)
   {
+    case LOADING:
+      pantallaCarga();
+      break;
+
     case CONFIGURACION:
       detachInterrupt(digitalPinToInterrupt(intPin1));
       attachInterrupt(digitalPinToInterrupt(intPin1), InterruptEmpezar, FALLING);
       attachInterrupt(digitalPinToInterrupt(intPin2), cambiarDificultad, FALLING);
-      velocidadStack = 200;
+      attachInterrupt(digitalPinToInterrupt(intPin3), CambiarColor, FALLING);
+      attachInterrupt(digitalPinToInterrupt(intPin4), CambiarBrillo, FALLING);
       estado = ESTADO_INICIAL;
+      tiempo = millis();
       break;
 
     case ESTADO_INICIAL:
+      sonido_inicio();
       if (millis() - startTime > VelocidadStack) //pongo los valores en la matriz
       {
         ISR_Animacion();
@@ -529,6 +956,7 @@ void Stacker()
       break;
 
     case STACKER:
+
       if (millis() - startTime > VelocidadStack) //pongo los valores en la matriz
       {
         ISR_Mover();
