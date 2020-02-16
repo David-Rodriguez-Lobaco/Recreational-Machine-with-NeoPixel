@@ -25,27 +25,27 @@ int     BRIGHTNESS = 20;  //luminosidad
 
 //MÁQUINA DE ESTADOS
 
-#define CONFIGURACION    0
-#define ESTADO_INICIAL   1
-#define STACKER          2
-#define WIN              3
-#define GAME_OVER        4
-#define LOADING          9
+#define CONFIGURACION    0 //Configura las variables a su estado inicial y asigna las interrupciones
+#define ESTADO_INICIAL   1 //pantalla de inicio. Se puede elegir la dificultad, color y brillo.
+#define STACKER          2 //Juego 
+#define WIN              3 //Animacion de victoria
+#define GAME_OVER        4 //Animacion de derrota
+#define LOADING          9 //pantalla de carga con el logo.
 
-int estado = 9;
+int estado = 9; //Estado por el que va a empezar
 
 //CRGB leds[NUM_LEDS];
-Adafruit_NeoPixel matriz = Adafruit_NeoPixel(256, LED_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel matriz = Adafruit_NeoPixel(256, LED_PIN, NEO_GRB + NEO_KHZ800); //Configura la matriz
 
 int fila = 0;
-const int timeThreshold = 300;
+const int timeThreshold = 300; //Tiempo entre interrupciones
 const int intPin1 = 2; //boton para parar stacker
 const int intPin2 = 3; //boton del nivelint
 const int intPin3 = 18; //Boton del color
 const int intPin4 = 19; //Boton del brillo
-long antiRebotes = 0;
+long antiRebotes = 0; 
 long startTime = 0;
-int luces = 3;
+int luces = 3; //Numero de leds que se mueven
 int alternar = 0;//variable para la animacion
 int direccion = 0; // '0' es que va para la derecha y '1' hacia la izquierda
 int i = 2; //La posicion por la que empieza en la matriz
@@ -63,7 +63,7 @@ int tiempoCarga = 0;
 
 
 
-int matrizLeds[32][8] = {
+int matrizLeds[32][8] = { //Posicion de cada led en la matriz
   {0, 1, 2, 3, 4, 5, 6, 7},
   {15, 14, 13, 12, 11, 10, 9, 8},
   {16, 17, 18, 19, 20, 21, 22, 23},
@@ -151,19 +151,18 @@ void pararFila() //para la fila en el lugar y aumenta la fila
   noInterrupts();
   if (millis() - antiRebotes > timeThreshold) //pongo los valores en la matriz
   {
-    detachInterrupt(digitalPinToInterrupt(intPin1));
+    detachInterrupt(digitalPinToInterrupt(intPin1)); //deshabilito la interrupcion, por si acaso
     comprobarStack();//comprueba si se apila y si no elimina leds
     direccion = 0;
     i = luces - 1;
     antiRebotes = millis();
-    attachInterrupt(digitalPinToInterrupt(intPin1), pararFila, FALLING);
-
+    attachInterrupt(digitalPinToInterrupt(intPin1), pararFila, FALLING); //vuelvo a habilitar la interrupcion.
   }
   interrupts();
 }
 
 
-void comprobarStack()
+void comprobarStack() //Compruebo si se estan apilando correctamente
 {
   int luces_act = luces;
   if (fila > 0) //si es la fila 2 o mayor compruebo con la fila de abajo
@@ -178,25 +177,25 @@ void comprobarStack()
       }
     }
 
-    if (luces_act != luces)
+    if (luces_act != luces) //si ha habido algun fallo
     {
       Fallo_Al_Pulsar();
     }
 
   }
-  fila++;
-  if (luces == 0)
+  fila++; //sube de fila
+  if (luces == 0) //si fallo todas 
   {
-    estado = 4;
+    estado = 4; //GAME OVER
     //break;
   }
-  else if (fila >= 32)
+  else if (fila >= 32) //Si he llegado hasta la ultima fila 
   {
-    estado = 3;
+    estado = 3; //WIN
   }
-  else
+  else  
   {
-    actualizar_Nivel();
+    actualizar_Nivel(); //Aumento la velocidad
   }
 
 }
@@ -303,7 +302,7 @@ void actualizar_Nivel() //Dependiendo del nivel aumenta la velocidad a la que se
   }
 }
 
-void ISR_Mover()
+void ISR_Mover() //Animacion del juego principal. Hacen el movimiento de los leds
 {
   noInterrupts();
   if (direccion == 0)
@@ -396,7 +395,7 @@ void ISR_Mover()
   }
 }
 
-void reiniciarStacker()
+void reiniciarStacker() //Al finalizar el juego reinicia los valores por defecto
 {
   fila = 0;
   luces = 3;
@@ -420,7 +419,7 @@ void reiniciarStacker()
   puntuacionStacker = 0;
 }
 
-void ISR_Animacion()
+void ISR_Animacion() //Animacion de la pantalla de inicio donde puedes elegir nivel, color,...
 {
   if (alternar == 0)
   {
@@ -493,7 +492,7 @@ void ISR_Animacion()
   matriz.show();
 }
 
-void InterruptEmpezar()
+void InterruptEmpezar() //Elimina todas las interrupciones y asigna al boton principal la funcion de parar la fila
 {
   noInterrupts();
   if (millis() - antiRebotes > timeThreshold) //pongo los valores en la matriz
@@ -514,7 +513,7 @@ void InterruptEmpezar()
   interrupts();
 }
 
-void animacionGanadoraStacker()
+void animacionGanadoraStacker() //Animacion ganadora
 {
   int d = 0;
   long periodo;
@@ -529,7 +528,7 @@ void animacionGanadoraStacker()
   Timer1.stop();
   delay(50);
 
-
+////////////////////////////////    SONIDO ////////////////////////////
   alternar = 0;
   periodo = millis() - 251;
   tiempo1 = millis();
@@ -641,6 +640,8 @@ void animacionGanadoraStacker()
       Timer1.stop();
       tiempo1 = millis();
     }
+    
+///////////////////////////// animacion //////////////////////////////////
 
     if (millis() - periodo > 250) //pongo los valores en la matriz
     {
@@ -674,7 +675,7 @@ void animacionGanadoraStacker()
   reiniciarStacker();
 }
 
-void cambiarDificultad()
+void cambiarDificultad() //Permite cambiar la dificultad del juego en el menu principal.
 {
   noInterrupts();
   if (millis() - antiRebotes > timeThreshold) //pongo los valores en la matriz
@@ -780,7 +781,7 @@ void sonido_victoria()
     }*/
 }
 
-void CambiarColor()
+void CambiarColor() //Permite cambiar el color en la pantalla principal
 {
   noInterrupts();
   if (millis() - antiRebotes > timeThreshold) //pongo los valores en la matriz
@@ -820,7 +821,7 @@ void CambiarColor()
   interrupts();
 }
 
-void CambiarBrillo()
+void CambiarBrillo() //Permite cambiar el brillo en la pagina principal.
 {
   noInterrupts();
   if (millis() - antiRebotes > timeThreshold) //pongo los valores en la matriz
@@ -836,7 +837,7 @@ void CambiarBrillo()
   interrupts();
 }
 
-void pantallaCarga()
+void pantallaCarga() //Pantalla de carga con la palagra 'LOADING'
 {
 
   matriz.clear();
@@ -927,6 +928,8 @@ void pantallaCarga()
     estado = 0;
   }
 }
+
+/////////////////////////////////////// MAQUINA DE ESTADOS ///////////////////////////////////////
 
 void Stacker()
 {
